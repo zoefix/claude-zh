@@ -240,6 +240,22 @@ function printMacCodeSign(state) {
   } else if (state.status === "valid") {
     console.log("macOS 重签名: 已有效");
   }
+  printMacKeychain(state.keychain);
+}
+
+function printMacKeychain(state) {
+  if (!state) return;
+  if (state.status === "updated") {
+    console.log(`macOS 登录态: 已修复 Keychain 访问（${state.cdhashes} 项）`);
+  } else if (state.status === "created" || state.status === "created-without-partitions") {
+    console.log(`macOS 登录态: 已创建 Keychain 登录密钥（${state.cdhashes} 项）`);
+  } else if (state.status === "valid") {
+    console.log("macOS 登录态: Keychain 访问已正常");
+  } else if (state.status === "needs-password") {
+    console.log("macOS 登录态: 需要输入 macOS 登录密码后重新执行安装命令");
+  } else if (state.status === "failed" || state.status === "create-failed") {
+    console.log("macOS 登录态: Keychain 访问修复失败，请重新执行安装命令");
+  }
 }
 
 function printHelp() {

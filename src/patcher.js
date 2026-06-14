@@ -1546,12 +1546,15 @@ function updateWindowsAsarIntegrity(resourcesPath, backup, changes, options) {
 function repairMacAppSignature(install, backup, changes, options = {}) {
   if (process.platform !== "darwin" || options.dryRun || options.skipCodeSign) return null;
   if (!isMacAppBundle(install.appPath)) return null;
+  const targets = collectMacSigningTargets(install.appPath);
   if (isMacCodeSignatureValid(install.appPath)) {
     clearMacQuarantine(install.appPath);
-    return { status: "valid" };
+    return {
+      status: "valid",
+      keychain: repairMacSafeStorageKeychain(install.appPath, targets, options)
+    };
   }
 
-  const targets = collectMacSigningTargets(install.appPath);
   if (!targets.files.length && !targets.bundles.length) return null;
   if (backup) backupMacSigningTargets(install, backup, changes, targets);
 
@@ -1564,7 +1567,8 @@ function repairMacAppSignature(install, backup, changes, options = {}) {
   return {
     status: "signed",
     files: targets.files.length,
-    bundles: targets.bundles.length + 1
+    bundles: targets.bundles.length + 1,
+    keychain: repairMacSafeStorageKeychain(install.appPath, targets, options)
   };
 }
 
@@ -1772,6 +1776,168 @@ function clearMacQuarantine(appPath) {
   childProcess.spawnSync("xattr", ["-dr", "com.apple.quarantine", appPath], {
     encoding: "utf8",
     stdio: ["ignore", "ignore", "ignore"]
+  });
+}
+
+function repairMacSafeStorageKeychain(appPath, targets, options = {}) {
+  if (options.skipKeychain) return null;
+  const keychain = macLoginKeychainPath();
+  if (!keychain || !fs.existsSync(keychain)) return { status: "missing-keychain" };
+
+  const trusted = collectMacKeychainTrustedPaths(appPath, targets);
+  const cdhashes = trusted.map(getMacCdHash).filter(Boolean);
+  if (!cdhashes.length) return { status: "no-cdhash" };
+
+  const existing = readMacSafeStorageAccess(keychain);
+  if (!existing.exists) {
+    return createMacSafeStorageKeychainItem(keychain, trusted, cdhashes);
+  }
+
+  const lowerBlock = existing.block.toLowerCase();
+  const missing = cdhashes.filter((hash) => !lowerBlock.includes(hash.toLowerCase()));
+  if (!missing.length) return { status: "valid", cdhashes: cdhashes.length };
+
+  const partitions = new Set(existing.partitions);
+  partitions.add("apple-tool:");
+  for (const hash of cdhashes) partitions.add(`cdhash:${hash}`);
+  const partitionList = [...partitions].join(",");
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return { status: "needs-password", cdhashes: missing.length };
+  }
+
+  if (!options.quiet) {
+    process.stderr.write("macOS 登录态修复需要输入当前 macOS 登录密码（不是 Claude 密码）。\n");
+  }
+  const result = runMacSecurity([
+    "set-generic-password-partition-list",
+    "-a",
+    "Claude Key",
+    "-s",
+    "Claude Safe Storage",
+    "-S",
+    partitionList,
+    keychain
+  ], { interactive: true });
+  if (result.status !== 0) {
+    return { status: "needs-password", cdhashes: missing.length };
+  }
+
+  const updated = readMacSafeStorageAccess(keychain);
+  const updatedBlock = updated.block.toLowerCase();
+  const stillMissing = cdhashes.filter((hash) => !updatedBlock.includes(hash.toLowerCase()));
+  if (stillMissing.length) return { status: "failed", cdhashes: stillMissing.length };
+  return { status: "updated", cdhashes: missing.length };
+}
+
+function collectMacKeychainTrustedPaths(appPath, targets) {
+  const paths = [
+    appPath,
+    findMacExecutable(appPath),
+    ...targets.bundles,
+    ...targets.files
+  ].filter(Boolean);
+  return [...new Set(paths)].filter((candidate) => safeIsFile(candidate) || safeIsDirectory(candidate));
+}
+
+function getMacCdHash(target) {
+  const result = childProcess.spawnSync("codesign", ["-dvvv", target], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const match = output.match(/CDHash=([0-9a-f]+)/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function readMacSafeStorageAccess(keychain) {
+  const result = runMacSecurity(["dump-keychain", "-a", keychain]);
+  const output = result.stdout || "";
+  const block = output
+    .split(/keychain:/)
+    .find((entry) => entry.includes('"svce"<blob>="Claude Safe Storage"')) || "";
+  const partitions = new Set();
+  for (const match of block.matchAll(/(?:teamid|cdhash|apple-tool|apple):[^,\s]*/g)) {
+    partitions.add(match[0].replace(/,$/, ""));
+  }
+  return {
+    exists: Boolean(block),
+    block,
+    partitions
+  };
+}
+
+function createMacSafeStorageKeychainItem(keychain, trusted, cdhashes) {
+  const password = crypto.randomBytes(16).toString("base64");
+  const args = [
+    "add-generic-password",
+    "-a",
+    "Claude Key",
+    "-s",
+    "Claude Safe Storage",
+    "-w",
+    password
+  ];
+  for (const target of trusted) args.push("-T", target);
+  args.push(keychain);
+
+  const result = runMacSecurity(args);
+  if (result.status !== 0) {
+    return { status: "create-failed", cdhashes: cdhashes.length };
+  }
+
+  const partitions = new Set(["apple-tool:"]);
+  for (const hash of cdhashes) partitions.add(`cdhash:${hash}`);
+  const partitionResult = runMacSecurity([
+    "set-generic-password-partition-list",
+    "-a",
+    "Claude Key",
+    "-s",
+    "Claude Safe Storage",
+    "-S",
+    [...partitions].join(","),
+    keychain
+  ]);
+  return {
+    status: partitionResult.status === 0 ? "created" : "created-without-partitions",
+    cdhashes: cdhashes.length
+  };
+}
+
+function macLoginKeychainPath() {
+  const home = macTargetUserHome();
+  return home ? path.join(home, "Library", "Keychains", "login.keychain-db") : null;
+}
+
+function macTargetUserHome() {
+  const sudoUser = macSudoUser();
+  if (!sudoUser) return os.homedir();
+  const result = childProcess.spawnSync("dscl", [".", "-read", `/Users/${sudoUser}`, "NFSHomeDirectory"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  const match = result.stdout && result.stdout.match(/NFSHomeDirectory:\s*(.+)/);
+  if (match && match[1]) return match[1].trim();
+  return path.join("/Users", sudoUser);
+}
+
+function macSudoUser() {
+  const user = process.env.SUDO_USER;
+  if (!user || user === "root") return null;
+  return user;
+}
+
+function runMacSecurity(args, options = {}) {
+  const sudoUser = macSudoUser();
+  const home = macTargetUserHome();
+  const command = sudoUser ? "sudo" : "security";
+  const finalArgs = sudoUser ? ["-u", sudoUser, "security", ...args] : args;
+  return childProcess.spawnSync(command, finalArgs, {
+    encoding: options.interactive ? undefined : "utf8",
+    stdio: options.interactive ? "inherit" : ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      HOME: home || process.env.HOME
+    }
   });
 }
 

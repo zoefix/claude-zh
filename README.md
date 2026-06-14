@@ -174,7 +174,13 @@ npx -y github:zoefix/claude-zh --verbose
 
 ### macOS 官方账号每次重启都要重新登录
 
-请更新到最新版本插件后重新执行安装命令。macOS 安装会同步 `app.asar` 完整性哈希，并对修改后的 Claude.app 做本机重签名和清除 quarantine。
+请更新到最新版本插件后重新执行安装命令：
+
+```bash
+sudo npx -y github:zoefix/claude-zh
+```
+
+如果终端提示 `macOS 登录态修复需要输入当前 macOS 登录密码`，请输入你的 macOS 开机登录密码。这个步骤用于修复 Claude Helper 读取 Keychain 登录密钥的权限，输入后重新打开 Claude，再登录一次即可。
 
 ### Claude 更新后又变回英文
 
@@ -217,6 +223,6 @@ node src/cli.js default --app /Applications/Claude.app
 
 Claude Desktop 主界面会加载远程页面，只改本地 JSON 不够。本插件会修改 Claude 本地资源和 `app.asar`，并注入页面脚本处理动态界面文字。
 
-macOS 修改 `app.asar` 后，插件会同步 `ElectronAsarIntegrity`，并对 `.app`、内部 helper、framework 和原生二进制做本机 ad-hoc 重签名，最后验证签名有效。
+macOS 修改 `app.asar` 后，插件会同步 `ElectronAsarIntegrity`，并对 `.app`、内部 helper、framework 和原生二进制做本机 ad-hoc 重签名，最后验证签名有效。同时会修复 `Claude Safe Storage` 的 Keychain 访问权限，避免官方账号重启后反复掉线。
 
 Claude 新版本如果新增英文文案，可能需要继续补充翻译表。
