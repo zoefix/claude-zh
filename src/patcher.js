@@ -14,7 +14,7 @@ const {
 
 const MARKER = "claude-zh-cn";
 const PRELOAD_MARKER_PREFIX = "claude-zh-cn preload patch";
-const PRELOAD_MARKER_VERSION = "v27";
+const PRELOAD_MARKER_VERSION = "v28";
 const CURRENT_PRELOAD_MARKER = `${PRELOAD_MARKER_PREFIX} ${PRELOAD_MARKER_VERSION}`;
 const DEFAULT_BACKUP_DIR = path.join(appDataDir(), "backups");
 const MANAGED_WINDOWS_APP_NAME = "Claude";
@@ -2134,6 +2134,12 @@ function buildDomScript(catalog) {
       [/^Resets Sun (.+)$/, patternPhrases.resetsSun],
       [/^Connected (\\d+) minutes ago$/, patternPhrases.connectedMinutesAgo],
       [/^Connected 1 minute ago$/, patternPhrases.connectedMinuteAgo],
+      [/^Last updated: (\\d+) minutes ago$/, patternPhrases.lastUpdatedMinutesAgo],
+      [/^Last updated: 1 minute ago$/, patternPhrases.lastUpdatedMinuteAgo],
+      [/^Updated (\\d+) days ago$/, patternPhrases.updatedDaysAgo],
+      [/^Updated 1 day ago$/, patternPhrases.updatedDayAgo],
+      [/^(\\d+)%\\s*[·•]\\s*resets (\\d+)h$/, patternPhrases.usageResetsHours],
+      [/^(\\d+)%\\s*[·•]\\s*resets (\\d+)d$/, patternPhrases.usageResetsDays],
       [/^Showing (\\d+)-(\\d+) of (\\d+)$/, patternPhrases.showingRange],
       [/^Page (\\d+) of (\\d+)$/, patternPhrases.pageOf],
       [/^(\\d+) of (\\d+)$/, patternPhrases.count]

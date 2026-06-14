@@ -32,9 +32,19 @@ test("translates current settings usage and Claude Code pages", () => {
   assert.equal(cn.allPhrases["Computer use"], "电脑使用");
   assert.equal(cn.allPhrases["Denied apps"], "已拒绝的应用");
   assert.equal(cn.allPhrases["Open System Settings"], "打开系统设置");
+  assert.equal(cn.allPhrases["Log out of all devices"], "退出所有设备");
+  assert.equal(cn.allPhrases["You’re subscribed via iOS app"], "你已通过 iOS App 订阅");
+  assert.equal(cn.allPhrases["View all plans"], "查看全部套餐");
+  assert.equal(cn.allPhrases["Customize sidebar"], "自定义侧边栏");
+  assert.equal(cn.allPhrases["One conversation from anywhere"], "随时随地接续同一场对话");
+  assert.equal(cn.allPhrases["AI-powered artifacts"], "AI 驱动的作品");
+  assert.equal(cn.allPhrases["Privacy Center"], "隐私中心");
+  assert.equal(cn.allPhrases["Voice"], "语音");
   assert.equal(cn.patternPhrases.percentUsed, "已使用 $1%");
   assert.equal(cn.patternPhrases.resetsWed, "周三 $1 重置");
   assert.equal(cn.patternPhrases.connectedMinutesAgo, "$1 分钟前连接");
+  assert.equal(cn.patternPhrases.lastUpdatedMinutesAgo, "上次更新：$1 分钟前");
+  assert.equal(cn.patternPhrases.usageResetsHours, "已使用 $1% · $2 小时后重置");
   assert.equal(cn.patternPhrases.showingRange, "显示第 $1-$2 项，共 $3 项");
 
   assert.equal(tw.allPhrases["Plan usage limits"], "計劃用量限制");
@@ -42,6 +52,9 @@ test("translates current settings usage and Claude Code pages", () => {
   assert.equal(tw.allPhrases["Claude in Chrome settings"], "Chrome 中的 Claude 設定");
   assert.equal(tw.allPhrases["Browser Use"], "瀏覽器使用");
   assert.equal(tw.allPhrases["Computer use"], "電腦使用");
+  assert.equal(tw.allPhrases["You’re subscribed via iOS app"], "你已透過 iOS App 訂閱");
+  assert.equal(tw.allPhrases["View all plans"], "查看全部方案");
+  assert.equal(tw.allPhrases["Privacy Center"], "隱私中心");
 });
 
 test("patches an installed Claude resources directory in place and restores it", async () => {
@@ -66,7 +79,7 @@ test("patches an installed Claude resources directory in place and restores it",
   assert.ok(result.changes.includes(path.join("ion-dist", "assets", "claude-zh-cn-dom.js")));
   assert.notDeepEqual(fs.readFileSync(path.join(resourcesPath, "app.asar")), originalAsar);
   const patchedPreload = extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js");
-  assert.match(patchedPreload, /claude-zh-cn preload patch v27 zh-CN/);
+  assert.match(patchedPreload, /claude-zh-cn preload patch v28 zh-CN/);
   assert.match(patchedPreload, /executeJavaScript/);
   assert.match(patchedPreload, /claude-zh-cn-active-lang/);
   assert.match(patchedPreload, /claude-zh-cn-official-language/);
@@ -185,7 +198,7 @@ test("preview patches a temporary copy without modifying the source app", async 
   const previewResources = path.join(result.previewAppPath, "Contents", "Resources");
   const previewJson = JSON.parse(fs.readFileSync(path.join(previewResources, "en-US.json"), "utf8"));
   assert.equal(previewJson.S3k92gI8z, "新对话");
-  assert.match(extractAsarFile(path.join(previewResources, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v27 zh-CN/);
+  assert.match(extractAsarFile(path.join(previewResources, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v28 zh-CN/);
 });
 
 test("patches Taiwan traditional Chinese and restores default through the backup chain", async () => {
@@ -210,7 +223,7 @@ test("patches Taiwan traditional Chinese and restores default through the backup
   assert.ok(fs.existsSync(path.join(resourcesPath, "ion-dist", "i18n", "zh-TW.json")));
   assert.ok(fs.existsSync(path.join(resourcesPath, "ion-dist", "i18n", "dynamic", "zh-TW.json")));
   assert.match(fs.readFileSync(path.join(resourcesPath, "ion-dist", "index.html"), "utf8"), /lang="zh-TW"/);
-  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v27 zh-TW/);
+  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v28 zh-TW/);
   assert.equal(getStatus({ app: appPath, backupDir })[0].patched, true);
 
   const restored = restorePatch({ app: appPath, backupDir, restoreDefault: true });
@@ -308,7 +321,7 @@ test("patches Windows Store installs in place after unlocking", async () => {
   assert.equal(result.resourcesPath, resourcesPath);
   assert.equal(result.launched, false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(resourcesPath, "en-US.json"), "utf8")).S3k92gI8z, "新对话");
-  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v27 zh-CN/);
+  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v28 zh-CN/);
 });
 
 async function createFakeClaude(resourcesPath) {
