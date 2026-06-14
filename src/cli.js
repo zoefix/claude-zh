@@ -136,6 +136,7 @@ function runApply(options) {
     if (result.packageFamilyName) console.log(`包身份: ${result.packageFamilyName}`);
     if (result.appUserModelId) console.log(`AppUserModelId: ${result.appUserModelId}`);
     if (result.launcherPath) console.log(`启动器: ${result.launcherPath}`);
+    printMacCodeSign(result.macCodeSign);
     console.log(`修改数量: ${changedCount}`);
     if (result.pid) console.log(`进程 PID: ${result.pid}`);
     if (options.verbose && changedCount) printList(result.changes);
@@ -148,6 +149,7 @@ function runApply(options) {
   console.log(`Claude: ${result.appPath}`);
   console.log(`资源目录: ${result.resourcesPath}`);
   console.log(`备份目录: ${result.backupPath}`);
+  printMacCodeSign(result.macCodeSign);
   console.log(`修改数量: ${changedCount}`);
   if (options.verbose && changedCount) printList(result.changes);
   if (!options.dryRun) console.log("请完全退出并重新打开 Claude。");
@@ -192,6 +194,7 @@ function runRestore(options) {
     if (result.registration) console.log(`原版注册: ${result.registration.ok ? "成功" : "失败"}`);
     if (result.registration && !result.registration.ok) console.log(`注册信息: ${result.registration.message}`);
   }
+  printMacCodeSign(result.macCodeSign);
   console.log(`恢复数量: ${result.restored.length}`);
   if (options.verbose && result.restored.length) printList(result.restored);
   if (!options.dryRun) console.log("请完全退出并重新打开 Claude。");
@@ -228,6 +231,15 @@ function formatStatus(row) {
 
 function printList(items) {
   for (const item of items) console.log(`- ${item}`);
+}
+
+function printMacCodeSign(state) {
+  if (!state) return;
+  if (state.status === "signed") {
+    console.log(`macOS 重签名: 完成（${state.files} 个文件，${state.bundles} 个 bundle）`);
+  } else if (state.status === "valid") {
+    console.log("macOS 重签名: 已有效");
+  }
 }
 
 function printHelp() {

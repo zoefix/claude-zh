@@ -261,6 +261,7 @@ function applyPatchInPlace(install, options = {}) {
   patchLocalizableStrings(install.resourcesPath, backup, changes, options, catalog, languageCatalogs);
   patchIonDist(install.resourcesPath, backup, changes, options, catalog, languageCatalogs);
   patchAsarPreload(install.resourcesPath, backup, changes, options, catalog);
+  const macCodeSign = repairMacAppSignature(install, backup, changes, options);
 
   if (!options.dryRun) {
     writeManifest(backup, install, changes, catalog, languageCatalogs);
@@ -274,6 +275,7 @@ function applyPatchInPlace(install, options = {}) {
     lang: catalog.lang,
     languages: languageCatalogs.map((entry) => entry.lang),
     dryRun: Boolean(options.dryRun),
+    macCodeSign,
     changes
   };
 }
@@ -337,6 +339,7 @@ function restorePatchForInstall(install, options = {}) {
     const manifest = readJson(path.join(currentBackupPath, "manifest.json"));
     restoreManifestFiles(install, currentBackupPath, manifest, restored, options);
   }
+  const macCodeSign = repairMacAppSignature(install, null, restored, options);
 
   return {
     appPath: install.appPath,
@@ -344,6 +347,7 @@ function restorePatchForInstall(install, options = {}) {
     backupPath: backupPaths[backupPaths.length - 1],
     restoreDefault: Boolean(options.restoreDefault),
     dryRun: Boolean(options.dryRun),
+    macCodeSign,
     restored
   };
 }
@@ -1537,6 +1541,238 @@ function updateWindowsAsarIntegrity(resourcesPath, backup, changes, options) {
   const patched = Buffer.from(exe);
   patched.write(hash, hashOffset, 64, "ascii");
   writeFileIfChanged(exeFile, patched, backup, changes, options);
+}
+
+function repairMacAppSignature(install, backup, changes, options = {}) {
+  if (process.platform !== "darwin" || options.dryRun || options.skipCodeSign) return null;
+  if (!isMacAppBundle(install.appPath)) return null;
+  if (isMacCodeSignatureValid(install.appPath)) {
+    clearMacQuarantine(install.appPath);
+    return { status: "valid" };
+  }
+
+  const targets = collectMacSigningTargets(install.appPath);
+  if (!targets.files.length && !targets.bundles.length) return null;
+  if (backup) backupMacSigningTargets(install, backup, changes, targets);
+
+  signMacApp(install.appPath, targets);
+  clearMacQuarantine(install.appPath);
+
+  if (!isMacCodeSignatureValid(install.appPath)) {
+    throw new Error("macOS 重签名后验证失败。请恢复 Claude.app 或重新安装 Claude 后再执行。");
+  }
+  return {
+    status: "signed",
+    files: targets.files.length,
+    bundles: targets.bundles.length + 1
+  };
+}
+
+function isMacAppBundle(appPath) {
+  if (!appPath || path.extname(appPath).toLowerCase() !== ".app") return false;
+  const contents = path.join(appPath, "Contents");
+  const macosDir = path.join(contents, "MacOS");
+  return safeIsDirectory(contents) && safeIsDirectory(macosDir) && Boolean(findMacExecutable(appPath));
+}
+
+function findMacExecutable(appPath) {
+  const macosDir = path.join(appPath, "Contents", "MacOS");
+  const bundleExecutable = readMacBundleExecutable(appPath);
+  const candidates = [
+    bundleExecutable && path.join(macosDir, bundleExecutable),
+    path.join(macosDir, "Claude"),
+    ...safeReadDir(macosDir).map((name) => path.join(macosDir, name))
+  ].filter(Boolean);
+  return candidates.find((candidate) => safeIsFile(candidate) && isExecutable(candidate)) || null;
+}
+
+function isMacCodeSignatureValid(appPath) {
+  const result = childProcess.spawnSync("codesign", [
+    "--verify",
+    "--deep",
+    "--strict",
+    "--verbose=2",
+    appPath
+  ], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  return result.status === 0;
+}
+
+function collectMacSigningTargets(appPath) {
+  const contents = path.join(appPath, "Contents");
+  const bundleSuffixes = new Set([".app", ".framework", ".xpc", ".appex", ".plugin", ".bundle"]);
+  const bundles = [];
+  const files = [];
+  const stack = [contents];
+
+  while (stack.length) {
+    const current = stack.pop();
+    for (const name of safeReadDir(current)) {
+      const candidate = path.join(current, name);
+      let stat = null;
+      try {
+        stat = fs.lstatSync(candidate);
+      } catch {
+        continue;
+      }
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) {
+        if (bundleSuffixes.has(path.extname(candidate))) bundles.push(candidate);
+        stack.push(candidate);
+      } else if (isMacSignableFile(candidate)) {
+        files.push(candidate);
+      }
+    }
+  }
+
+  return {
+    files: [...new Set(files)].sort((a, b) => b.split(path.sep).length - a.split(path.sep).length),
+    bundles: [...new Set(bundles)].sort((a, b) => b.split(path.sep).length - a.split(path.sep).length)
+  };
+}
+
+function isMacSignableFile(file) {
+  if (!safeIsFile(file)) return false;
+  const ext = path.extname(file).toLowerCase();
+  return [".dylib", ".node", ".so"].includes(ext) || isExecutable(file);
+}
+
+function backupMacSigningTargets(install, backup, changes, targets) {
+  const candidates = [
+    ...targets.files,
+    ...collectMacCodeSignatureFiles(install.appPath),
+    path.join(install.appPath, "Contents", "_CodeSignature", "CodeResources")
+  ];
+
+  for (const candidate of [...new Set(candidates)]) {
+    const relativePath = path.relative(install.resourcesPath, candidate);
+    if (!relativePath || relativePath === ".") continue;
+    if (backup.files.has(relativePath)) continue;
+    backupFile(candidate, relativePath, backup, {});
+    changes.push(relativePath);
+  }
+}
+
+function collectMacCodeSignatureFiles(appPath) {
+  const output = [];
+  const stack = [path.join(appPath, "Contents")];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const name of safeReadDir(current)) {
+      const candidate = path.join(current, name);
+      let stat = null;
+      try {
+        stat = fs.lstatSync(candidate);
+      } catch {
+        continue;
+      }
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) {
+        stack.push(candidate);
+      } else if (candidate.split(path.sep).includes("_CodeSignature")) {
+        output.push(candidate);
+      }
+    }
+  }
+  return output;
+}
+
+function signMacApp(appPath, targets) {
+  const entitlementsDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-zh-cn-entitlements-"));
+  try {
+    for (const file of targets.files) signMacPath(file, entitlementsDir);
+    for (const bundle of targets.bundles) signMacPath(bundle, entitlementsDir);
+    signMacPath(appPath, entitlementsDir);
+  } finally {
+    fs.rmSync(entitlementsDir, { recursive: true, force: true });
+  }
+}
+
+function signMacPath(target, entitlementsDir) {
+  const entitlements = readMacEntitlements(target);
+  const args = [
+    "--force",
+    "--sign",
+    "-",
+    "--options",
+    "runtime",
+    "--preserve-metadata=identifier,flags"
+  ];
+
+  if (entitlements) {
+    const entitlementFile = path.join(entitlementsDir, `${crypto.randomBytes(8).toString("hex")}.plist`);
+    fs.writeFileSync(entitlementFile, patchMacEntitlements(entitlements), "utf8");
+    args.push("--entitlements", entitlementFile);
+  }
+  args.push(target);
+
+  const result = childProcess.spawnSync("codesign", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `macOS 重签名失败：${target}`);
+  }
+}
+
+function readMacEntitlements(target) {
+  const result = childProcess.spawnSync("codesign", [
+    "-d",
+    "--entitlements",
+    ":-",
+    target
+  ], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const plistIndex = output.indexOf("<?xml");
+  const fallbackIndex = output.indexOf("<plist");
+  const start = plistIndex >= 0 ? plistIndex : fallbackIndex;
+  if (start < 0) return null;
+  const end = output.indexOf("</plist>", start);
+  if (end < 0) return null;
+  return output.slice(start, end + "</plist>".length).trim();
+}
+
+function patchMacEntitlements(xml) {
+  let patched = xml;
+  for (const key of [
+    "com.apple.application-identifier",
+    "com.apple.developer.team-identifier",
+    "keychain-access-groups",
+    "com.apple.security.cs.disable-library-validation"
+  ]) {
+    patched = removePlistKey(patched, key);
+  }
+  return patched.replace(
+    /<\/dict>/,
+    "  <key>com.apple.security.cs.disable-library-validation</key>\n  <true/>\n</dict>"
+  );
+}
+
+function removePlistKey(xml, key) {
+  const valuePattern = [
+    "<array>[\\s\\S]*?<\\/array>",
+    "<dict>[\\s\\S]*?<\\/dict>",
+    "<string>[\\s\\S]*?<\\/string>",
+    "<data>[\\s\\S]*?<\\/data>",
+    "<integer>[\\s\\S]*?<\\/integer>",
+    "<real>[\\s\\S]*?<\\/real>",
+    "<true\\s*\\/>",
+    "<false\\s*\\/>"
+  ].join("|");
+  const pattern = new RegExp(`\\s*<key>${escapeRegExp(key)}<\\/key>\\s*(?:${valuePattern})`, "g");
+  return xml.replace(pattern, "");
+}
+
+function clearMacQuarantine(appPath) {
+  childProcess.spawnSync("xattr", ["-dr", "com.apple.quarantine", appPath], {
+    encoding: "utf8",
+    stdio: ["ignore", "ignore", "ignore"]
+  });
 }
 
 function findWindowsClaudeExecutableNearResources(resourcesPath) {

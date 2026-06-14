@@ -172,6 +172,10 @@ npx -y github:zoefix/claude-zh --verbose
 系统设置 > 隐私与安全性 > Full Disk Access（完全磁盘访问）
 ```
 
+### macOS 官方账号每次重启都要重新登录
+
+请更新到最新版本插件后重新执行安装命令。macOS 安装会同步 `app.asar` 完整性哈希，并对修改后的 Claude.app 做本机重签名和清除 quarantine。
+
 ### Claude 更新后又变回英文
 
 Claude 更新会覆盖本地插件。重新执行：
@@ -212,5 +216,7 @@ node src/cli.js default --app /Applications/Claude.app
 ## 说明
 
 Claude Desktop 主界面会加载远程页面，只改本地 JSON 不够。本插件会修改 Claude 本地资源和 `app.asar`，并注入页面脚本处理动态界面文字。
+
+macOS 修改 `app.asar` 后，插件会同步 `ElectronAsarIntegrity`，并对 `.app`、内部 helper、framework 和原生二进制做本机 ad-hoc 重签名，最后验证签名有效。
 
 Claude 新版本如果新增英文文案，可能需要继续补充翻译表。
