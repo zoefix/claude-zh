@@ -10,11 +10,38 @@ const crypto = require("node:crypto");
 
 const { applyPatch, getStatus, launchPreview, resolveInstall, restorePatch, _test } = require("../src/patcher");
 const { parseArgs } = require("../src/cli");
+const { createCatalog } = require("../src/translations");
 
 test("cli installs the full language menu by default", () => {
   const parsed = parseArgs([]);
   assert.equal(parsed.command, "apply");
   assert.equal(parsed.options.locale, "cn");
+});
+
+test("translates current settings usage and Claude Code pages", () => {
+  const cn = createCatalog({ locale: "cn" });
+  const tw = createCatalog({ locale: "tw" });
+
+  assert.equal(cn.allPhrases["Plan usage limits"], "计划用量限制");
+  assert.equal(cn.allPhrases["Classify session states"], "对会话状态进行分类");
+  assert.equal(cn.allPhrases["Autofix pull requests"], "自动修复拉取请求");
+  assert.equal(cn.allPhrases["Delete sessions stored by Anthropic"], "删除 Anthropic 保存的会话");
+  assert.equal(cn.allPhrases["Claude in Chrome settings"], "Chrome 中的 Claude 设置");
+  assert.equal(cn.allPhrases["Browser Use"], "浏览器使用");
+  assert.equal(cn.allPhrases["Connected browsers"], "已连接的浏览器");
+  assert.equal(cn.allPhrases["Computer use"], "电脑使用");
+  assert.equal(cn.allPhrases["Denied apps"], "已拒绝的应用");
+  assert.equal(cn.allPhrases["Open System Settings"], "打开系统设置");
+  assert.equal(cn.patternPhrases.percentUsed, "已使用 $1%");
+  assert.equal(cn.patternPhrases.resetsWed, "周三 $1 重置");
+  assert.equal(cn.patternPhrases.connectedMinutesAgo, "$1 分钟前连接");
+  assert.equal(cn.patternPhrases.showingRange, "显示第 $1-$2 项，共 $3 项");
+
+  assert.equal(tw.allPhrases["Plan usage limits"], "計劃用量限制");
+  assert.equal(tw.allPhrases["Classify session states"], "對工作階段狀態進行分類");
+  assert.equal(tw.allPhrases["Claude in Chrome settings"], "Chrome 中的 Claude 設定");
+  assert.equal(tw.allPhrases["Browser Use"], "瀏覽器使用");
+  assert.equal(tw.allPhrases["Computer use"], "電腦使用");
 });
 
 test("patches an installed Claude resources directory in place and restores it", async () => {
@@ -39,7 +66,7 @@ test("patches an installed Claude resources directory in place and restores it",
   assert.ok(result.changes.includes(path.join("ion-dist", "assets", "claude-zh-cn-dom.js")));
   assert.notDeepEqual(fs.readFileSync(path.join(resourcesPath, "app.asar")), originalAsar);
   const patchedPreload = extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js");
-  assert.match(patchedPreload, /claude-zh-cn preload patch v26 zh-CN/);
+  assert.match(patchedPreload, /claude-zh-cn preload patch v27 zh-CN/);
   assert.match(patchedPreload, /executeJavaScript/);
   assert.match(patchedPreload, /claude-zh-cn-active-lang/);
   assert.match(patchedPreload, /claude-zh-cn-official-language/);
@@ -158,7 +185,7 @@ test("preview patches a temporary copy without modifying the source app", async 
   const previewResources = path.join(result.previewAppPath, "Contents", "Resources");
   const previewJson = JSON.parse(fs.readFileSync(path.join(previewResources, "en-US.json"), "utf8"));
   assert.equal(previewJson.S3k92gI8z, "新对话");
-  assert.match(extractAsarFile(path.join(previewResources, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v26 zh-CN/);
+  assert.match(extractAsarFile(path.join(previewResources, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v27 zh-CN/);
 });
 
 test("patches Taiwan traditional Chinese and restores default through the backup chain", async () => {
@@ -183,7 +210,7 @@ test("patches Taiwan traditional Chinese and restores default through the backup
   assert.ok(fs.existsSync(path.join(resourcesPath, "ion-dist", "i18n", "zh-TW.json")));
   assert.ok(fs.existsSync(path.join(resourcesPath, "ion-dist", "i18n", "dynamic", "zh-TW.json")));
   assert.match(fs.readFileSync(path.join(resourcesPath, "ion-dist", "index.html"), "utf8"), /lang="zh-TW"/);
-  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v26 zh-TW/);
+  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v27 zh-TW/);
   assert.equal(getStatus({ app: appPath, backupDir })[0].patched, true);
 
   const restored = restorePatch({ app: appPath, backupDir, restoreDefault: true });
@@ -281,7 +308,7 @@ test("patches Windows Store installs in place after unlocking", async () => {
   assert.equal(result.resourcesPath, resourcesPath);
   assert.equal(result.launched, false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(resourcesPath, "en-US.json"), "utf8")).S3k92gI8z, "新对话");
-  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v26 zh-CN/);
+  assert.match(extractAsarFile(path.join(resourcesPath, "app.asar"), ".vite/build/mainView.js"), /claude-zh-cn preload patch v27 zh-CN/);
 });
 
 async function createFakeClaude(resourcesPath) {

@@ -14,7 +14,7 @@ const {
 
 const MARKER = "claude-zh-cn";
 const PRELOAD_MARKER_PREFIX = "claude-zh-cn preload patch";
-const PRELOAD_MARKER_VERSION = "v26";
+const PRELOAD_MARKER_VERSION = "v27";
 const CURRENT_PRELOAD_MARKER = `${PRELOAD_MARKER_PREFIX} ${PRELOAD_MARKER_VERSION}`;
 const DEFAULT_BACKUP_DIR = path.join(appDataDir(), "backups");
 const MANAGED_WINDOWS_APP_NAME = "Claude";
@@ -2118,6 +2118,24 @@ function buildDomScript(catalog) {
       [/^Your artifacts and scheduled tasks are stored at (.+)\\.$/, patternPhrases.coworkFilesPath],
       [/^(.+) Not recognized$/, patternPhrases.notRecognized],
       [/^(\\d+) of (\\d+) sessions$/, patternPhrases.sessionCount],
+      [/^(\\d+)% used$/, patternPhrases.percentUsed],
+      [/^Resets in (\\d+) hr (\\d+) min$/, patternPhrases.resetsInHoursMinutes],
+      [/^Resets in (\\d+) hrs (\\d+) mins$/, patternPhrases.resetsInHoursMinutes],
+      [/^Resets in (\\d+) hr$/, patternPhrases.resetsInHours],
+      [/^Resets in (\\d+) hrs$/, patternPhrases.resetsInHours],
+      [/^Resets in (\\d+) min$/, patternPhrases.resetsInMinutes],
+      [/^Resets in (\\d+) mins$/, patternPhrases.resetsInMinutes],
+      [/^Resets Mon (.+)$/, patternPhrases.resetsMon],
+      [/^Resets Tue (.+)$/, patternPhrases.resetsTue],
+      [/^Resets Wed (.+)$/, patternPhrases.resetsWed],
+      [/^Resets Thu (.+)$/, patternPhrases.resetsThu],
+      [/^Resets Fri (.+)$/, patternPhrases.resetsFri],
+      [/^Resets Sat (.+)$/, patternPhrases.resetsSat],
+      [/^Resets Sun (.+)$/, patternPhrases.resetsSun],
+      [/^Connected (\\d+) minutes ago$/, patternPhrases.connectedMinutesAgo],
+      [/^Connected 1 minute ago$/, patternPhrases.connectedMinuteAgo],
+      [/^Showing (\\d+)-(\\d+) of (\\d+)$/, patternPhrases.showingRange],
+      [/^Page (\\d+) of (\\d+)$/, patternPhrases.pageOf],
       [/^(\\d+) of (\\d+)$/, patternPhrases.count]
       ].filter((entry) => typeof entry[1] === "string" && entry[1]);
     }
